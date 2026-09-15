@@ -13,42 +13,87 @@
     }
     h1 { margin-bottom: 0.5rem; }
     #gamesLoadedCounter { margin-bottom: 1rem; opacity: 0.9; }
-    ul { padding-left: 1.25rem; }
-    li { margin: 0.4rem 0; }
-    a { color: #8ab4f8; text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    #search {
+      width: 100%;
+      max-width: 420px;
+      padding: 0.55rem 0.7rem;
+      margin-bottom: 1rem;
+      border-radius: 8px;
+      border: 1px solid #2e3440;
+      background: #151923;
+      color: #e8eaed;
+    }
+    #buttonContainer {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .menu-button {
+      position: relative;
+      display: block;
+      width: 100%;
+      border: 1px solid #2e3440;
+      border-radius: 12px;
+      overflow: hidden;
+      padding: 0;
+      background: #111624;
+      cursor: pointer;
+    }
+    .menu-button img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      display: block;
+      background: #0b0f17;
+    }
+    .overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 8px 10px;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0));
+      color: #fff;
+      font-size: 0.9rem;
+      text-align: left;
+    }
     .error { color: #ff8a80; }
+    .hint { color: #9aa4b2; margin-top: 12px; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <h1>Game Links</h1>
   <div id="gamesLoadedCounter">Loading games...</div>
-  <ul id="gameLinks"></ul>
+  <input id="search" type="text" placeholder="Search games..." />
+  <div id="buttonContainer"></div>
+  <p class="hint">Click a game to open <code>/play</code> with selected game data in sessionStorage.</p>
 
-  <!-- Supabase JS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const SUPABASE_URL      = 'https://lhurtuuxsmlakoikcpiz.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxodXJ0dXV4c21sYWtvaWtjcGl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1OTIyNjEsImV4cCI6MjA3OTE2ODI2MX0.NiXIlUukeNB-gOANdbHSyfb6T9GcO7QqtlMsQgkEGKc';
+    // --- Supabase Configuration ---
+    const SUPABASE_URL      = 'https://lhurtuuxsmlakoikcpiz.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxodXJ0dXV4c21sYWtvaWtjcGl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1OTIyNjEsImV4cCI6MjA3OTE2ODI2MX0.NiXIlUukeNB-gOANdbHSyfb6T9GcO7QqtlMsQgkEGKc'
 
-    let supabase       = null;
-    let supabasePublic = null;
-    let allGames       = [];
-    window.allGames    = allGames;
-
-    function escapeHtml(str = '') {
-      return String(str)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
+    let supabase       = null
+    let supabasePublic = null
+    let allGames       = []
+    window.allGames    = allGames
 
     // --- Supabase Initialization ---
     function initSupabase() {
-      if (window.supabase) {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const counter = document.getElementById('gamesLoadedCounter')
+
+      if (!window.supabase) {
+        console.error('✗ Supabase client not found on window')
+        if (counter) {
+          counter.textContent = 'Error: Supabase JS not loaded.'
+          counter.classList.add('error')
+        }
+        return
+      }
+
+      try {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
         supabasePublic = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: {
@@ -56,84 +101,152 @@
             autoRefreshToken: false,
             detectSessionInUrl: false
           }
-        });
+        })
 
-        window._nebulaSupabase = supabasePublic;
-        console.log('✓ Supabase initialized');
-        fetchGamesAndRender();
-      } else {
-        console.error('✗ Supabase client not found');
-        const el = document.getElementById('gamesLoadedCounter');
-        if (el) {
-          el.textContent = 'Error: Supabase client not loaded.';
-          el.classList.add('error');
+        window._nebulaSupabase = supabasePublic
+        console.log('✓ Supabase initialized')
+        fetchGamesAndRender()
+      } catch (e) {
+        console.error('✗ Supabase init error:', e)
+        if (counter) {
+          counter.textContent = `Error: ${e.message || 'Supabase init failed'}`
+          counter.classList.add('error')
         }
       }
     }
 
-    // Pull links from your games table
+    // --- Utilities ---
+    function slugify(name) {
+      return String(name || '').toLowerCase().replace(/[. ]+/g, '-')
+    }
+
+    function createButton(game) {
+      const gameName = game.name || game.title || 'Untitled'
+      const button = document.createElement('button')
+      button.className = 'menu-button'
+      button.title     = gameName
+      button.onclick   = (e) => { e.preventDefault(); playGame(game) }
+
+      const slug = slugify(gameName)
+
+      const img = document.createElement('img')
+      img.src = game.image || `/images/game-logos/${slug}.png`
+      img.alt = gameName
+      img.loading = 'lazy'
+      button.appendChild(img)
+
+      const overlay = document.createElement('div')
+      overlay.className = 'overlay'
+      overlay.textContent = gameName
+      button.appendChild(overlay)
+
+      return button
+    }
+
+    // --- Fetch & Render ---
     async function fetchGamesAndRender() {
-      const counter = document.getElementById('gamesLoadedCounter');
-      const listEl  = document.getElementById('gameLinks');
-
-      // Try common column sets so this works even if schema differs
-      const columnAttempts = [
-        'id,title,url',
-        'id,name,url',
-        'id,title,link',
-        'id,name,link',
-        '*'
-      ];
-
-      let data = null;
-      let lastError = null;
-
-      for (const cols of columnAttempts) {
-        const res = await supabasePublic
-          .from('games')
-          .select(cols)
-          .order('id', { ascending: true });
-
-        if (!res.error) {
-          data = res.data || [];
-          lastError = null;
-          break;
+      const client  = supabasePublic || supabase
+      const counter = document.getElementById('gamesLoadedCounter')
+      if (!client) {
+        if (counter) {
+          counter.textContent = 'Error: No Supabase client.'
+          counter.classList.add('error')
         }
-        lastError = res.error;
+        return
       }
 
-      if (lastError) {
-        console.error('Supabase fetch error:', lastError);
-        counter.textContent = `Failed to load games: ${lastError.message}`;
-        counter.classList.add('error');
-        return;
-      }
+      try {
+        if (counter) counter.textContent = 'Loading games...'
 
-      allGames = data;
-      window.allGames = allGames;
+        let data = null
+        let error = null
 
-      if (!data.length) {
-        counter.textContent = '0 games loaded.';
-        listEl.innerHTML = '<li>No games found.</li>';
-        return;
-      }
+        const attempts = [
+          { select: 'id,name,link,image', order: 'name' },
+          { select: 'id,title,url,image', order: 'title' },
+          { select: '*', order: null }
+        ]
 
-      listEl.innerHTML = data.map((game) => {
-        const title = game.title || game.name || `Game #${game.id ?? ''}`.trim();
-        const link  = game.url || game.link || '#';
-        const safeTitle = escapeHtml(title);
+        for (const attempt of attempts) {
+          let query = client.from('games').select(attempt.select)
+          if (attempt.order) query = query.order(attempt.order, { ascending: true })
 
-        if (!link || link === '#') {
-          return `<li>${safeTitle} (no link field found)</li>`;
+          const res = await query
+          if (!res.error) {
+            data = res.data || []
+            error = null
+            break
+          }
+          error = res.error
         }
 
-        return `<li><a href="${link}" target="_blank" rel="noopener noreferrer">${safeTitle}</a></li>`;
-      }).join('');
+        if (error) throw error
 
-      counter.textContent = `${data.length} game(s) loaded.`;
+        allGames = data || []
+        window.allGames = allGames
+
+        renderButtons(allGames)
+
+        const searchEl = document.getElementById('search')
+        if (searchEl && !searchEl.dataset.bound) {
+          searchEl.addEventListener('input', handleSearch)
+          searchEl.dataset.bound = '1'
+        }
+
+        if (counter) counter.textContent = `${allGames.length} games loaded`
+      } catch (err) {
+        console.error('✗ Failed to fetch games:', err)
+        if (counter) {
+          counter.textContent = `Error loading games: ${err.message || err}`
+          counter.classList.add('error')
+        }
+      }
     }
 
-    document.addEventListener('DOMContentLoaded', initSupabase);
+    // --- Render game grid ---
+    function renderButtons(games) {
+      const container = document.getElementById('buttonContainer')
+      const counter   = document.getElementById('gamesLoadedCounter')
+
+      if (!container) {
+        if (counter) {
+          counter.textContent = 'Error: #buttonContainer not found'
+          counter.classList.add('error')
+        }
+        return
+      }
+
+      container.innerHTML = ''
+
+      if (!games.length) {
+        container.innerHTML = '<p style="color:rgba(163,247,255,0.6)">No games found.</p>'
+        if (counter) counter.textContent = '0 games found'
+        return
+      }
+
+      games.forEach(game => container.appendChild(createButton(game)))
+    }
+
+    // --- Search ---
+    function handleSearch(e) {
+      const q = e.target.value.toLowerCase().trim()
+      if (!q) return renderButtons(allGames)
+      renderButtons(allGames.filter(g => (g.name || g.title || '').toLowerCase().includes(q)))
+    }
+
+    // --- Play Game ---
+    function playGame(game) {
+      const gameName = game.name || game.title || 'Untitled'
+      const slug = slugify(gameName)
+
+      sessionStorage.setItem('gameLink',  game.link || game.url || `/sourceCode/${slug}`)
+      sessionStorage.setItem('gameName',  gameName)
+      sessionStorage.setItem('gameImage', game.image || `/images/game-logos/${slug}.png`)
+      window.location.href = '/play'
+    }
+
+    window.playGame = playGame
+    window.addEventListener('load', initSupabase)
   </script>
 </body>
 </html>

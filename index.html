@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nebula Test - Game Links</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      background: #0f1115;
+      color: #e8eaed;
+    }
+    h1 { margin-bottom: 0.5rem; }
+    #gamesLoadedCounter { margin-bottom: 1rem; opacity: 0.9; }
+    ul { padding-left: 1.25rem; }
+    li { margin: 0.4rem 0; }
+    a { color: #8ab4f8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .error { color: #ff8a80; }
+  </style>
+</head>
+<body>
+  <h1>Game Links</h1>
+  <div id="gamesLoadedCounter">Loading games...</div>
+  <ul id="gameLinks"></ul>
+
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL      = 'https://lhurtuuxsmlakoikcpiz.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxodXJ0dXV4c21sYWtvaWtjcGl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1OTIyNjEsImV4cCI6MjA3OTE2ODI2MX0.NiXIlUukeNB-gOANdbHSyfb6T9GcO7QqtlMsQgkEGKc';
+
+    let supabase       = null;
+    let supabasePublic = null;
+    let allGames       = [];
+    window.allGames    = allGames;
+
+    function escapeHtml(str = '') {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    // --- Supabase Initialization ---
+    function initSupabase() {
+      if (window.supabase) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        supabasePublic = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        });
+
+        window._nebulaSupabase = supabasePublic;
+        console.log('✓ Supabase initialized');
+        fetchGamesAndRender();
+      } else {
+        console.error('✗ Supabase client not found');
+        const el = document.getElementById('gamesLoadedCounter');
+        if (el) {
+          el.textContent = 'Error: Supabase client not loaded.';
+          el.classList.add('error');
+        }
+      }
+    }
+
+    // Pull links from your games table
+    async function fetchGamesAndRender() {
+      const counter = document.getElementById('gamesLoadedCounter');
+      const listEl  = document.getElementById('gameLinks');
+
+      // Try common column sets so this works even if schema differs
+      const columnAttempts = [
+        'id,title,url',
+        'id,name,url',
+        'id,title,link',
+        'id,name,link',
+        '*'
+      ];
+
+      let data = null;
+      let lastError = null;
+
+      for (const cols of columnAttempts) {
+        const res = await supabasePublic
+          .from('games')
+          .select(cols)
+          .order('id', { ascending: true });
+
+        if (!res.error) {
+          data = res.data || [];
+          lastError = null;
+          break;
+        }
+        lastError = res.error;
+      }
+
+      if (lastError) {
+        console.error('Supabase fetch error:', lastError);
+        counter.textContent = `Failed to load games: ${lastError.message}`;
+        counter.classList.add('error');
+        return;
+      }
+
+      allGames = data;
+      window.allGames = allGames;
+
+      if (!data.length) {
+        counter.textContent = '0 games loaded.';
+        listEl.innerHTML = '<li>No games found.</li>';
+        return;
+      }
+
+      listEl.innerHTML = data.map((game) => {
+        const title = game.title || game.name || `Game #${game.id ?? ''}`.trim();
+        const link  = game.url || game.link || '#';
+        const safeTitle = escapeHtml(title);
+
+        if (!link || link === '#') {
+          return `<li>${safeTitle} (no link field found)</li>`;
+        }
+
+        return `<li><a href="${link}" target="_blank" rel="noopener noreferrer">${safeTitle}</a></li>`;
+      }).join('');
+
+      counter.textContent = `${data.length} game(s) loaded.`;
+    }
+
+    document.addEventListener('DOMContentLoaded', initSupabase);
+  </script>
+</body>
+</html>
